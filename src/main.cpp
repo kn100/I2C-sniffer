@@ -10,22 +10,35 @@
 #define I2C_IDLE 0
 #define I2C_TRX 2
 
-static volatile byte i2cStatus = I2C_IDLE; // Status of the I2C BUS
-static uint32_t lastStartMillis = 0;	   // stoe the last time
-static volatile byte dataBuffer[100000];   // Array for storing data of the I2C communication
-static volatile uint16_t bufferPoiW = 0;   // points to the first empty position in the dataBufer to write
-static uint16_t bufferPoiR = 0;			   // points to the position where to start read from
-static volatile byte bitCount = 0;		   // counter of bit appeared on the BUS
-static volatile uint16_t byteCount = 0;	   // counter of bytes were writen in one communication.
-static volatile byte i2cBitD = 0;		   // Container of the actual SDA bit
-static volatile byte i2cBitD2 = 0;		   // Container of the actual SDA bit
-static volatile byte i2cBitC = 0;		   // Container of the actual SDA bit
-static volatile byte i2cClk = 0;		   // Container of the actual SCL bit
-static volatile byte i2cCase = 0;		   // Container of the last ACK value
-static volatile uint16_t falseStart = 0;   // Counter of false start events
-static volatile uint16_t sclUpCnt = 0;	   // Auxiliary variable to count rising SCL
-static volatile uint16_t sdaUpCnt = 0;	   // Auxiliary variable to count rising SDA
-static volatile uint16_t sdaDownCnt = 0;   // Auxiliary variable to count falling SDA
+// Status of the I2C BUS
+static volatile byte i2cStatus = I2C_IDLE;
+// Array for storing data we got. Arbitrarily huge.
+static volatile byte dataBuffer[100000];
+// points to the first empty position in the dataBuffer for bytes to be written
+static volatile uint16_t bufferPoiW = 0;
+// points to the position where we've read up until
+static uint16_t bufferPoiR = 0;
+// counter of bits that have appeared on the bus
+static volatile byte bitCount = 0;
+// counter of bytes were writen in one communication
+static volatile uint16_t byteCount = 0;
+// Container of the actual SDA bit
+static volatile byte i2cBitD = 0;
+// Container of the actual SDA bit	   
+static volatile byte i2cBitD2 = 0;
+// Container of the actual SDA bit		   
+static volatile byte i2cBitC = 0;
+// Container of the actual SCL bit
+static volatile byte i2cClk = 0;
+// Container of the last ACK value
+static volatile byte i2cCase = 0;
+// Counter of false start events
+static volatile uint16_t falseStart = 0;
+
+// Statistical variables
+static volatile uint16_t sclUpCnt = 0;	   
+static volatile uint16_t sdaUpCnt = 0;
+static volatile uint16_t sdaDownCnt = 0;
 
 void IRAM_ATTR i2cTriggerOnRaisingSCL()
 {
@@ -118,7 +131,6 @@ void IRAM_ATTR i2cTriggerOnChangeSDA()
 		if (i2cStatus == I2C_IDLE && i2cClk) // If SCL still HIGH than this is a START
 		{
 			i2cStatus = I2C_TRX;
-			// lastStartMillis = millis();//takes too long in an interrupt handler and caused timeout panic and CPU restart
 			bitCount = 0;
 			byteCount = 0;
 			dataBuffer[bufferPoiW++] = 'S'; // 83 STOP

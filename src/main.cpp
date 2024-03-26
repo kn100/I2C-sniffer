@@ -174,33 +174,17 @@ void processDataBuffer()
 
 void setup()
 {
-
-#ifdef I2CTEST
-	pinMode(PIN_SCL, OUTPUT);
-	pinMode(PIN_SDA, OUTPUT);
-#else
 	pinMode(PIN_SCL, INPUT_PULLUP);
 	pinMode(PIN_SDA, INPUT_PULLUP);
 	resetI2cVariable();
 
 	attachInterrupt(PIN_SCL, i2cTriggerOnRaisingSCL, RISING); // trigger for reading data from SDA
 	attachInterrupt(PIN_SDA, i2cTriggerOnChangeSDA, CHANGE);  // for I2C START and STOP
-#endif
 	Serial.begin(115200);
 }
 
 void loop()
 {
-
-#ifdef I2CTEST
-	digitalWrite(PIN_SCL, HIGH); // 13 SARGA
-	digitalWrite(PIN_SDA, HIGH); // 12 KEK
-	delay(500);
-	digitalWrite(PIN_SCL, HIGH); // 13 SARGA
-	digitalWrite(PIN_SDA, LOW);	 // 12 KEK
-	delay(500);
-#else
-
 	// if it is in IDLE, then write out the databuffer to the serial consol
 	if (i2cStatus == I2C_IDLE)
 	{
@@ -210,6 +194,4 @@ void loop()
 		Serial.print("\rEnd delay    ");
 		delay(500);
 	}
-
-#endif
 }

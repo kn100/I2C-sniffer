@@ -18,57 +18,19 @@ static volatile byte dataBuffer[100000];
 static volatile uint16_t bufferPoiW = 0;
 // points to the position where we've read up until
 static uint16_t bufferPoiR = 0;
-// Bits that have appeared on the bus
-static volatile byte bitCount = 0;
-// counter of bytes were writen in one communication
-static volatile uint16_t byteCount = 0;
-// Counter of false start events
-static volatile uint16_t falseStart = 0;
-
-// Statistical variables
-static volatile uint16_t sclUpCnt = 0;
-static volatile uint16_t sdaUpCnt = 0;
-static volatile uint16_t sdaDownCnt = 0;
+// GREAT explanation: https://www.circuitbasics.com/basics-of-the-i2c-communication-protocol/
+// TODO:
+// Using a byte per bit seems wasteful, but we need some way to include start and stop conditions. Perhaps
+// an array of bytes, where start and stop are implicit, and we just store the data bits?
+// Parse data after the fact rather than during sampling. Will make shit easier to test, and allow
+// easier garbage filtering. God I hate C++
+// Ensure start and stop conditions are reliably detectable. Going to be infuriating to debug if not.
 
 void IRAM_ATTR i2cTriggerOnRaisingSCL()
 {
-	sclUpCnt++;
-	// Unclear to me what a false start is. Maybe return here.
-	if (i2cStatus == I2C_IDLE)
-	{
-		falseStart++;
-	}
-
-	byte i2cBitC = digitalRead(PIN_SDA);
-
-	// decide where we are and what to do with incoming data
-	byte i2cCase = 0; // normal case
-
-	if (bitCount == 8) // ACK case
-	{
-		i2cCase = 1;
-	}
-
-	if (bitCount == 7 && byteCount == 0) // R/W if the first address byte
-	{
-		i2cCase = 2;
-	}
-
-	bitCount++;
-
-	switch (i2cCase)
-	{
-	case 0: // Normal case
-		dataBuffer[bufferPoiW++] = '0' + i2cBitC;
-		break;
-	case 1: // ACK case (happens at the end of an address or a data byte)
-		dataBuffer[bufferPoiW++] = (i2cBitC ? '-' : '+');
-		byteCount++;
-		bitCount = 0;
-		break;
-	case 2: // Whether the primary wants to Read or Write to the secondary
-		dataBuffer[bufferPoiW++] = (i2cBitC ? 'R' : 'W');
-		break;
+	if (i2cStatus == I2C_TRX) {
+		// Only bytes received during a transmission are likely valid.
+		dataBuffer[bufferPoiW++] = '0' + digitalRead(PIN_SDA);
 	}
 }
 
@@ -86,41 +48,25 @@ bool IRAM_ATTR busStableRead(int busPin, int numReadings)
 	return reading;
 }
 
-/**
- * This is for recognizing I2C START and STOP
- * This is called when the SDA line is changing
- * It is decided inside the function wheather it is a rising or falling change.
- * If SCL is on High then the falling change is a START and the rising is a STOP.
- * If SCL is LOW, then this is the action to set a data bit, so nothing to do.
- */
 void IRAM_ATTR i2cTriggerOnChangeSDA()
 {
-	if (busStableRead(PIN_SCL, 2))
+	// If clock is low, there's nothing to do.
+	if (!digitalRead(PIN_SCL))
+		return;
+
+	bool sda = digitalRead(PIN_SDA);
+
+	if (i2cStatus == I2C_IDLE && !sda)
 	{
-		byte i2cClk = digitalRead(PIN_SCL);
-		if (i2cStatus = !I2C_IDLE && i2cClk == 1) // If SCL still HIGH then it is a STOP sign
-		{
-			i2cStatus = I2C_IDLE;
-			bitCount = 0;
-			byteCount = 0;
-			bufferPoiW--;
-			dataBuffer[bufferPoiW++] = 's';
-			dataBuffer[bufferPoiW++] = '\n';
-		}
-		sdaUpCnt++;
+		// Clock was high, SDA changed to low, this indicates a start.
+		i2cStatus = I2C_TRX;
+		dataBuffer[bufferPoiW++] = 'S';
 	}
-	else // FALLING if SDA is LOW
+	else if (i2cStatus == I2C_TRX && sda)
 	{
-		byte i2cClk = digitalRead(PIN_SCL);
-		if (i2cStatus == I2C_IDLE && i2cClk) // If SCL still HIGH than this is a START
-		{
-			i2cStatus = I2C_TRX;
-			bitCount = 0;
-			byteCount = 0;
-			// Stop condition
-			dataBuffer[bufferPoiW++] = 'S';
-		}
-		sdaDownCnt++;
+		// Clock was high, SDA changed to high, this indicates a stop.
+		i2cStatus = I2C_IDLE;
+		dataBuffer[bufferPoiW++] = 's';
 	}
 }
 
@@ -129,8 +75,6 @@ void resetI2cVariable()
 	i2cStatus = I2C_IDLE;
 	bufferPoiW = 0;
 	bufferPoiR = 0;
-	bitCount = 0;
-	falseStart = 0;
 }
 
 void processDataBuffer()
@@ -140,11 +84,22 @@ void processDataBuffer()
 
 	uint16_t pw = bufferPoiW;
 
-	// Serial.printf("\nSCL up: %d SDA up: %d SDA down: %d false start: %d\n", sclUpCnt, sdaUpCnt, sdaDownCnt, falseStart);
-
 	for (int i = bufferPoiR; i < pw; i++)
 	{
-		Serial.write(dataBuffer[i]);
+		byte data = dataBuffer[i];
+		if (data == 'S')
+		{
+			Serial.print("S");
+		}
+		else if (data == 's')
+		{
+			Serial.print("T\n");
+		}
+		else
+		{
+			Serial.write(data);
+		}
+		//Serial.write(dataBuffer[i]);
 		bufferPoiR++;
 	}
 
@@ -172,6 +127,10 @@ void loop()
 	// if it is in IDLE, then write out the databuffer to the serial consol
 	if (i2cStatus == I2C_IDLE)
 	{
+		// Print out half second chunks for analysis
+		Serial.println("START");
 		processDataBuffer();
+		Serial.println("END");
+		delay(500);
 	}
 }
